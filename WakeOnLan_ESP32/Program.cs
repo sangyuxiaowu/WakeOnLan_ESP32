@@ -1,205 +1,256 @@
-using Iot.Device.Ws28xx.Esp32;
-using nanoFramework.Networking;
+using ImprovWifi;
+using System;
+using System.Device.Gpio;
 using System.Diagnostics;
-using System.Drawing;
+using System.Net;
 using System.Net.NetworkInformation;
 using System.Threading;
+using WakeOnLan_ESP32.WorkLed;
 
 namespace WakeOnLan_ESP32
 {
+
+
     public class Program
     {
-        // 1 个灯珠，1像素
-        const int WS2812_Count = 1;
-        // 灯珠的引脚
-        const int WS2812_Pin = 21;
-        // 灯光控制器
-        private static DeviceController deviceController = new DeviceController(new Ws2812c(WS2812_Pin, WS2812_Count));
+        // 硬件配置信息
+
+        // 灯珠的GPIO引脚
+        static int WS2812_Pin = 8;
+        // 用户按键引脚
+        static int BOOT_Pin = 9;
+        // 硬件配网名称
+        static string _deviceName = "ESP32 桑榆肖物";
+
+
+        static Improv _imp;
+        static GpioController gpioController = new();
+
         /// <summary>
-        /// 设备运行状态
+        /// 灯光控制
         /// </summary>
-        private static DeviceController.RunStatus _currentStatus;
+        static BoardLedControl _led = new(WS2812_Pin);
+
+        /// <summary>
+        /// 是否连接成功
+        /// </summary>
+        static bool _connectSuccess = false;
+
         public static void Main()
         {
 
-            Debug.WriteLine("WakeOnLan Start!");
+            Debug.WriteLine("START");
 
+            // 开启工作灯，蓝色引擎启动！
+            _led.StartAutoUpdate();
 
-            // 读取网络配置，连接wifi
-            ConnectWifi();
+            // 初始化Improv
+            _imp = new Improv();
 
-            deviceController.DeviceStatus = DeviceController.RunStatus.Connecting;
-            // 模拟设备状态改变  
-            Thread statusChangeThread = new Thread(() =>
-            {
-                while (true)
-                {
-                    Thread.Sleep(5000); // 等待5秒  
-                    //deviceController.DeviceStatus = DeviceController.RunStatus.ConfigFailed;
-                    Thread.Sleep(5000);
-                    //deviceController.DeviceStatus = DeviceController.RunStatus.ConnectFailed;
-                    Thread.Sleep(5000);
-                    deviceController.DeviceStatus = DeviceController.RunStatus.Working;
-                }
-            });
-            statusChangeThread.Start();
-
-
-
-            // 轮询设备状态并更新LED  
-            while (true)
-            {
-                deviceController.UpdateLedStatus();
-            }
-        }
-
-
-        private static void ConnectWifi()
-        {
             // 读取配置文件
             var configuration = Wireless80211Configuration.GetAllWireless80211Configurations();
-            if (configuration.Length == 0)
+            if (configuration.Length == 0 || string.IsNullOrEmpty(configuration[0].Ssid) || string.IsNullOrEmpty(configuration[0].Password))
             {
-                Debug.WriteLine("没有找到wifi配置文件");
-                return;
+                Console.WriteLine("No WiFi configuration found");
             }
-            Debug.WriteLine($"SSID: {configuration[0].Ssid}, Password: {configuration[0].Password}");
-            return;
-            // 连接wifi超时时间60秒
-            CancellationTokenSource cs = new(60000);
-            var success = WifiNetworkHelper.ConnectDhcp(configuration[0].Ssid, configuration[0].Password, requiresDateTime: true, token: cs.Token);
-            if (!success)
+            else
             {
-                // 如果出现异常你可以通过 ConnectionError 获取异常的详情信息：
-                Debug.WriteLine($"无法连接到网络，错误: {WifiNetworkHelper.Status}");
-                if (WifiNetworkHelper.HelperException != null)
+                Console.WriteLine($"SSID: {configuration[0].Ssid}, Password: {configuration[0].Password}");
+                // 执行连接wifi逻辑;
+                _led.DeviceStatus = RunStatus.Connecting;
+                var success = _imp.ConnectWiFi(configuration[0].Ssid, configuration[0].Password);
+                if (!success)
                 {
-                    Debug.WriteLine($"ex: {WifiNetworkHelper.HelperException}");
+                    Console.WriteLine("Failed to connect to WiFi");
+                    _led.DeviceStatus = RunStatus.ConnectFailed;
+                }
+                else
+                {
+                    Console.WriteLine("Connected to WiFi successfully");
+                    _led.DeviceStatus = RunStatus.Working;
+                    _connectSuccess = true;
+
+                    var ip = _imp.GetCurrentIPAddress();
+                    Console.WriteLine($"IP: {ip}");
                 }
             }
-            //否则 连接成功，您已经拥有有效的IP和时间
-        }
 
+            // 初始化用户按键
+            var userbtn = gpioController.OpenPin(BOOT_Pin, PinMode.InputPullDown);
+            // 按键事件
+            userbtn.ValueChanged += Userbtn_ValueChanged;
 
+            // 若未连接成功，执行Improv配网
+            if (!_connectSuccess)
+            {
+                // 设置Improv
+                _imp.OnProvisioningComplete += Imp_OnProvisioningComplete;
+                _imp.Start(_deviceName);
+                // 被请求识别事件
+                _imp.OnIdentify += _imp_OnIdentify;
+                Console.WriteLine("Waiting for device to be provisioned");
+                while (_imp.CurrentState != Improv.ImprovState.provisioned)
+                {
+                    Thread.Sleep(500);
+                }
+                Console.WriteLine("Device has been provisioned");
+                // 等待1秒，让完成后的跳转数据发送出去
+                Thread.Sleep(1000);
+                _imp.Stop();
+            }
 
+            // 释放资源
+            _imp = null;
 
-    }
-
-    public class DeviceController
-    {
-
-        private Ws28xx ws2812_neo;
-        public DeviceController(Ws28xx _ws2812_neo)
-        {
-            // 初始化设备状态  
-            DeviceStatus = RunStatus.Connecting;
-            ws2812_neo = _ws2812_neo;
+            // 正常工作逻辑
+            Console.WriteLine("Starting app");
+            _led.DeviceStatus = RunStatus.Working;
+            AppRun();
+            Thread.Sleep(Timeout.Infinite);
         }
 
         /// <summary>
-        /// 定义设备状态
+        /// 被请求识别
         /// </summary>
-        public enum RunStatus
+        private static void _imp_OnIdentify(object sender, EventArgs e)
         {
-            /// <summary>  
-            /// wifi连接中,灯橙色闪烁  
-            /// </summary>  
-            Connecting,
-            /// <summary>  
-            /// wifi 配置问题，灯红色闪烁  
-            /// </summary>  
-            ConfigFailed,
-            /// <summary>  
-            /// wifi 连接失败，灯红色常亮  
-            /// </summary>  
-            ConnectFailed,
-            /// <summary>  
-            /// 正常工作中,绿色呼吸灯  
-            /// </summary>  
-            Working
-        }
-
-        // 定义设备状态属性  
-        public RunStatus DeviceStatus { get; set; }
-
-        public void UpdateLedStatus() {
-
-            BitmapImage img = ws2812_neo.Image;
-
-            switch (DeviceStatus)
+            Console.WriteLine("Identify requested");
+            if (_imp.CurrentState != Improv.ImprovState.authorizationRequired)
             {
-                case RunStatus.Connecting:
-                    // 设置灯橙色闪烁  
-                    
-                    img.SetPixel(0,0, Color.Orange);
-                    ws2812_neo.Update();
-                    Thread.Sleep(500);
-                    img.SetPixel(0,0, Color.Black);
-                    ws2812_neo.Update();
-                    Thread.Sleep(500);
-                    break;
-                case RunStatus.ConfigFailed:
-                    // 设置灯红色闪烁  
-                    img.SetPixel(0, 0, Color.Red);
-                    ws2812_neo.Update();
-                    Thread.Sleep(500);
-                    img.SetPixel(0, 0, Color.Black);
-                    ws2812_neo.Update();
-                    Thread.Sleep(500);
-                    break;
-                case RunStatus.ConnectFailed:
-                    // 设置灯红色常亮  
-                    img.SetPixel(0, 0, Color.Red);
-                    ws2812_neo.Update();
-                    Thread.Sleep(500);
-                    break;
-                case RunStatus.Working:
-                    // 设置绿色呼吸灯  
-                    Breathe(Color.Green, 5000, 100);
-                    break;
+                return;
             }
+            _led.DeviceStatus = RunStatus.OnIdentify;
         }
+
+
+        // 记录上一次按键按下时间
+        static DateTime lastClickTime = DateTime.UtcNow;
 
         /// <summary>
-        /// 呼吸灯效果
+        /// 用户按键事件
         /// </summary>
-        /// <param name="color">使用指定的颜色</param>
-        /// <param name="duration">时长</param>
-        /// <param name="steps">步长</param>
-        public void Breathe(Color color, int duration, int steps)
+        private static void Userbtn_ValueChanged(object sender, PinValueChangedEventArgs e)
         {
-            // 计算每一步的暂停时长 (单位：毫秒)  
-            int sleepDuration = duration / (2 * steps);
-            for (int i = 0; i < steps; i++)
+            // 记录按键按下时间
+            if (e.ChangeType == PinEventTypes.Falling)
             {
-                // 计算当前明度  
-                float brightness = (float)i / steps;
-                // 设置颜色  
-                Color currentColor = Color.FromArgb((int)(color.A * brightness), color.R, color.G, color.B);
-                SetColorAndSleep(currentColor, sleepDuration);
+                lastClickTime = DateTime.UtcNow;
             }
-            for (int i = steps; i > 0; i--)
+            // 按键松开
+            if (e.ChangeType == PinEventTypes.Rising)
             {
-                // 计算当前明度  
-                float brightness = (float)i / steps;
-                // 设置颜色  
-                Color currentColor = Color.FromArgb((int)(color.A * brightness), color.R, color.G, color.B);
-                SetColorAndSleep(currentColor, sleepDuration);
+                // 按键按下时间大于 5s，重置wifi配置
+                if ((DateTime.UtcNow - lastClickTime).TotalSeconds > 5)
+                {
+                    // 重置wifi配置
+                    Console.WriteLine("Reset wifi configuration");
+                    var wificonfig = new Wireless80211Configuration(0);
+                    wificonfig.Ssid = "";
+                    wificonfig.Password = "";
+                    wificonfig.SaveConfiguration();
+                    _led.DeviceStatus = RunStatus.ClearConfig;
+                }
+            }
+
+
+            // 配网结束或者未开始请求授权，则不处理
+            if (_imp is null || _imp.CurrentState != Improv.ImprovState.authorizationRequired)
+            {
+                return;
+            }
+            if (e.ChangeType == PinEventTypes.Rising)
+            {
+                Console.WriteLine("User button pressed");
+                _imp.Authorise(true);
+                // 验证成功，改变灯光状态
+                _led.DeviceStatus = RunStatus.AuthSuccess;
             }
         }
 
-        private void SetColorAndSleep(Color color, int sleepDuration)
+
+        /// <summary>
+        /// 配网完成
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private static void Imp_OnProvisioningComplete(object sender, EventArgs e)
         {
-            BitmapImage img = ws2812_neo.Image;
-            // 设置像素颜色  
-            img.SetPixel(0, 0, color);
-            // 更新LED灯  
-            ws2812_neo.Update();
-            // 暂停指定的时长  
-            Thread.Sleep(sleepDuration);
+            SetProvisioningURL();
         }
 
+        private static void SetProvisioningURL()
+        {
+            // All good, wifi connected, set up URL for access
+            _imp.RedirectUrl = "http://" + _imp.GetCurrentIPAddress() + "/start.htm";
+        }
 
+        private static void AppRun()
+        {
+            // set-up our HTTP response
+            string responseString =
+                "<HTML><BODY>" +
+                "<h2>Hello ESP32 WakeOnLan</h2>" +
+                "<p>We are a newly provisioned device using <b>Improv</b> over Bluetooth.</p>" +
+                "<p>See <a href='https://www.improv-wifi.com'>Improv web site</a> for details</p>" +
+                "<p>Click the button to send a Wake On LAN packet.</p>" +
+                "<form method='post'>" +
+                "<input type='text' name='mac' value='' />" +
+                "<input type='submit' value='Wake On LAN' />" +
+                "</form>" +
+                "</BODY></HTML>";
+            byte[] buffer = System.Text.Encoding.UTF8.GetBytes(responseString);
+
+            // Create a listener.
+            HttpListener listener = new("http", 80);
+
+            listener.Start();
+
+            while (true)
+            {
+                try
+                {
+                    // Now wait on context for a connection
+                    HttpListenerContext context = listener.GetContext();
+
+                    Console.WriteLine("Web request received");
+
+                    if (context.Request.HttpMethod == "POST")
+                    {
+                        // Handle WOL request
+                        var body = new System.IO.StreamReader(context.Request.InputStream).ReadToEnd();
+                        var macAddress = System.Web.HttpUtility.ParseQueryString(body).Get("mac");
+                        if (!string.IsNullOrEmpty(macAddress))
+                        {
+                            WakeOnLan.Send(macAddress);
+                            Console.WriteLine($"WOL packet sent to {macAddress}");
+                        }
+                        else
+                        {
+                            Console.WriteLine("No MAC address provided");
+                        }
+                    }
+
+                    // Get the response stream
+                    HttpListenerResponse response = context.Response;
+
+                    // Write reply
+                    response.ContentLength64 = buffer.Length;
+                    response.OutputStream.Write(buffer, 0, buffer.Length);
+
+                    // output stream must be closed
+                    context.Response.Close();
+
+                    Console.WriteLine("Web response sent");
+
+                    // context must be closed
+                    context.Close();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("* Error getting context: " + ex.Message + "\r\nSack = " + ex.StackTrace);
+                }
+            }
+        }
     }
 
 }
