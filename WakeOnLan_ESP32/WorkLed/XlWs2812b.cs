@@ -1,7 +1,7 @@
 ﻿using Iot.Device.Ws28xx.Esp32;
 using nanoFramework.Hardware.Esp32.Rmt;
 
-namespace WakeOnLan_ESP32
+namespace WakeOnLan_ESP32.WorkLed
 {
     public class XlWs2812b : Ws28xx
     {

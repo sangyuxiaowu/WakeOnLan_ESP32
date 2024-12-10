@@ -18,7 +18,10 @@
   </PropertyGroup>
   <Import Project="$(NanoFrameworkProjectSystemPath)NFProjectSystem.props" Condition="Exists('$(NanoFrameworkProjectSystemPath)NFProjectSystem.props')" />
   <ItemGroup>
-    <Compile Include="XlWs2812b.cs" />
+    <Compile Include="WakeOnLan.cs" />
+    <Compile Include="WorkLed\BoardLedControl.cs" />
+    <Compile Include="WorkLed\RunStatus.cs" />
+    <Compile Include="WorkLed\XlWs2812b.cs" />
     <Compile Include="Improv.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -65,6 +68,12 @@
     </Reference>
     <Reference Include="System.Net.Http">
       <HintPath>..\packages\nanoFramework.System.Net.Http.1.5.150\lib\System.Net.Http.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Net.Sockets.UdpClient">
+      <HintPath>..\packages\nanoFramework.System.Net.Sockets.UdpClient.1.1.65\lib\System.Net.Sockets.UdpClient.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Text.RegularExpressions">
+      <HintPath>..\packages\nanoFramework.System.Text.RegularExpressions.1.1.80\lib\System.Text.RegularExpressions.dll</HintPath>
     </Reference>
     <Reference Include="System.Threading">
       <HintPath>..\packages\nanoFramework.System.Threading.1.1.32\lib\System.Threading.dll</HintPath>

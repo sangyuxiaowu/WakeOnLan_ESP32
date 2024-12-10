@@ -1,14 +1,11 @@
-
+using ImprovWifi;
 using System;
-using System.Device.Wifi;
+using System.Device.Gpio;
 using System.Diagnostics;
-using System.Drawing;
+using System.Net;
 using System.Net.NetworkInformation;
 using System.Threading;
-using System.Device.Gpio;
-using ImprovWifi;
-using System.Net;
-using Iot.Device.Ws28xx.Esp32;
+using WakeOnLan_ESP32.WorkLed;
 
 namespace WakeOnLan_ESP32
 {
@@ -16,79 +13,146 @@ namespace WakeOnLan_ESP32
 
     public class Program
     {
-        static Improv _imp;
-        // 1 个灯珠，1像素
-        static int WS2812_Count = 1;
+        // 硬件配置信息
+
         // 灯珠的GPIO引脚
         static int WS2812_Pin = 8;
         // 用户按键引脚
         static int BOOT_Pin = 9;
+        // 硬件配网名称
+        static string _deviceName = "ESP32 桑榆肖物";
+
+
+        static Improv _imp;
         static GpioController gpioController = new();
-        static Ws28xx leddev = new XlWs2812b(WS2812_Pin, WS2812_Count);
-        static BitmapImage img = leddev.Image;
+
+        /// <summary>
+        /// 灯光控制
+        /// </summary>
+        static BoardLedControl _led = new(WS2812_Pin);
+
+        /// <summary>
+        /// 是否连接成功
+        /// </summary>
+        static bool _connectSuccess = false;
+
         public static void Main()
         {
 
-            Debug.WriteLine("蓝牙配网 Improv 协议示例");
+            Debug.WriteLine("START");
 
-            var userbtn = gpioController.OpenPin(BOOT_Pin, PinMode.InputPullDown);
+            // 开启工作灯，蓝色引擎启动！
+            _led.StartAutoUpdate();
 
+            // 初始化Improv
             _imp = new Improv();
 
-            _imp.OnProvisioningComplete += Imp_OnProvisioningComplete;
+            // 读取配置文件
+            var configuration = Wireless80211Configuration.GetAllWireless80211Configurations();
+            if (configuration.Length == 0 || string.IsNullOrEmpty(configuration[0].Ssid) || string.IsNullOrEmpty(configuration[0].Password))
+            {
+                Console.WriteLine("No WiFi configuration found");
+            }
+            else
+            {
+                Console.WriteLine($"SSID: {configuration[0].Ssid}, Password: {configuration[0].Password}");
+                // 执行连接wifi逻辑;
+                _led.DeviceStatus = RunStatus.Connecting;
+                var success = _imp.ConnectWiFi(configuration[0].Ssid, configuration[0].Password);
+                if (!success)
+                {
+                    Console.WriteLine("Failed to connect to WiFi");
+                    _led.DeviceStatus = RunStatus.ConnectFailed;
+                }
+                else
+                {
+                    Console.WriteLine("Connected to WiFi successfully");
+                    _led.DeviceStatus = RunStatus.Working;
+                    _connectSuccess = true;
 
-            _imp.Start("ESP32 桑榆肖物");
+                    var ip = _imp.GetCurrentIPAddress();
+                    Console.WriteLine($"IP: {ip}");
+                }
+            }
 
-            // 被请求识别事件
-            _imp.OnIdentify += _imp_OnIdentify;
+            // 初始化用户按键
+            var userbtn = gpioController.OpenPin(BOOT_Pin, PinMode.InputPullDown);
             // 按键事件
             userbtn.ValueChanged += Userbtn_ValueChanged;
 
-            Debug.WriteLine("Waiting for device to be provisioned");
-
-            while (_imp.CurrentState != Improv.ImprovState.provisioned)
+            // 若未连接成功，执行Improv配网
+            if (!_connectSuccess)
             {
-                Thread.Sleep(500);
+                // 设置Improv
+                _imp.OnProvisioningComplete += Imp_OnProvisioningComplete;
+                _imp.Start(_deviceName);
+                // 被请求识别事件
+                _imp.OnIdentify += _imp_OnIdentify;
+                Console.WriteLine("Waiting for device to be provisioned");
+                while (_imp.CurrentState != Improv.ImprovState.provisioned)
+                {
+                    Thread.Sleep(500);
+                }
+                Console.WriteLine("Device has been provisioned");
+                // 等待1秒，让完成后的跳转数据发送出去
+                Thread.Sleep(1000);
+                _imp.Stop();
             }
 
-            Debug.WriteLine("Device has been provisioned");
-
-            // 等待1秒，让完成后的跳转数据发送出去
-            Thread.Sleep(1000);
-
-            _imp.Stop();
-
-            Debug.WriteLine("Starting WiFi");
-            img.SetPixel(0, 0, Color.Blue);
-            leddev.Update();
-
+            // 释放资源
             _imp = null;
 
-
-            // Start our very simple web page server to pick up the redirect we gave
-            Debug.WriteLine("Starting simple web server");
-            SimpleWebListener();
-
+            // 正常工作逻辑
+            Console.WriteLine("Starting app");
+            _led.DeviceStatus = RunStatus.Working;
+            AppRun();
             Thread.Sleep(Timeout.Infinite);
         }
 
-
+        /// <summary>
+        /// 被请求识别
+        /// </summary>
         private static void _imp_OnIdentify(object sender, EventArgs e)
         {
-            Debug.WriteLine("Identify Required");
-            // 闪烁灯珠
-            for (int i = 0; i < 10; i++)
+            Console.WriteLine("Identify requested");
+            if (_imp.CurrentState != Improv.ImprovState.authorizationRequired)
             {
-                img.SetPixel(0, 0, Color.Red);
-                leddev.Update();
-                Thread.Sleep(100);
-                img.SetPixel(0, 0, Color.Black);
-                leddev.Update();
-                Thread.Sleep(100);
+                return;
             }
+            _led.DeviceStatus = RunStatus.OnIdentify;
         }
+
+
+        // 记录上一次按键按下时间
+        static DateTime lastClickTime = DateTime.UtcNow;
+
+        /// <summary>
+        /// 用户按键事件
+        /// </summary>
         private static void Userbtn_ValueChanged(object sender, PinValueChangedEventArgs e)
         {
+            // 记录按键按下时间
+            if (e.ChangeType == PinEventTypes.Falling)
+            {
+                lastClickTime = DateTime.UtcNow;
+            }
+            // 按键松开
+            if (e.ChangeType == PinEventTypes.Rising)
+            {
+                // 按键按下时间大于 5s，重置wifi配置
+                if ((DateTime.UtcNow - lastClickTime).TotalSeconds > 5)
+                {
+                    // 重置wifi配置
+                    Console.WriteLine("Reset wifi configuration");
+                    var wificonfig = new Wireless80211Configuration(0);
+                    wificonfig.Ssid = "";
+                    wificonfig.Password = "";
+                    wificonfig.SaveConfiguration();
+                    _led.DeviceStatus = RunStatus.ClearConfig;
+                }
+            }
+
+
             // 配网结束或者未开始请求授权，则不处理
             if (_imp is null || _imp.CurrentState != Improv.ImprovState.authorizationRequired)
             {
@@ -96,16 +160,19 @@ namespace WakeOnLan_ESP32
             }
             if (e.ChangeType == PinEventTypes.Rising)
             {
-                Debug.WriteLine("User button pressed");
+                Console.WriteLine("User button pressed");
                 _imp.Authorise(true);
-                // 验证成功，灯珠变绿
-                img.SetPixel(0, 0, Color.Green);
-                leddev.Update();
+                // 验证成功，改变灯光状态
+                _led.DeviceStatus = RunStatus.AuthSuccess;
             }
         }
 
 
-
+        /// <summary>
+        /// 配网完成
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private static void Imp_OnProvisioningComplete(object sender, EventArgs e)
         {
             SetProvisioningURL();
@@ -117,14 +184,19 @@ namespace WakeOnLan_ESP32
             _imp.RedirectUrl = "http://" + _imp.GetCurrentIPAddress() + "/start.htm";
         }
 
-        private static void SimpleWebListener()
+        private static void AppRun()
         {
             // set-up our HTTP response
             string responseString =
                 "<HTML><BODY>" +
-                "<h2>Hello from nanoFramework</h2>" +
+                "<h2>Hello ESP32 WakeOnLan</h2>" +
                 "<p>We are a newly provisioned device using <b>Improv</b> over Bluetooth.</p>" +
-                "<p>See <a href='https://www.improv-wifi.com'>Improv web site</a> for details" +
+                "<p>See <a href='https://www.improv-wifi.com'>Improv web site</a> for details</p>" +
+                "<p>Click the button to send a Wake On LAN packet.</p>" +
+                "<form method='post'>" +
+                "<input type='text' name='mac' value='' />" +
+                "<input type='submit' value='Wake On LAN' />" +
+                "</form>" +
                 "</BODY></HTML>";
             byte[] buffer = System.Text.Encoding.UTF8.GetBytes(responseString);
 
@@ -140,7 +212,23 @@ namespace WakeOnLan_ESP32
                     // Now wait on context for a connection
                     HttpListenerContext context = listener.GetContext();
 
-                    Debug.WriteLine("Web request received");
+                    Console.WriteLine("Web request received");
+
+                    if (context.Request.HttpMethod == "POST")
+                    {
+                        // Handle WOL request
+                        var body = new System.IO.StreamReader(context.Request.InputStream).ReadToEnd();
+                        var macAddress = System.Web.HttpUtility.ParseQueryString(body).Get("mac");
+                        if (!string.IsNullOrEmpty(macAddress))
+                        {
+                            WakeOnLan.Send(macAddress);
+                            Console.WriteLine($"WOL packet sent to {macAddress}");
+                        }
+                        else
+                        {
+                            Console.WriteLine("No MAC address provided");
+                        }
+                    }
 
                     // Get the response stream
                     HttpListenerResponse response = context.Response;
@@ -152,14 +240,14 @@ namespace WakeOnLan_ESP32
                     // output stream must be closed
                     context.Response.Close();
 
-                    Debug.WriteLine("Web response sent");
+                    Console.WriteLine("Web response sent");
 
                     // context must be closed
                     context.Close();
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine("* Error getting context: " + ex.Message + "\r\nSack = " + ex.StackTrace);
+                    Console.WriteLine("* Error getting context: " + ex.Message + "\r\nSack = " + ex.StackTrace);
                 }
             }
         }
