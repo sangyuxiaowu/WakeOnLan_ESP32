@@ -16,7 +16,8 @@
         OnIdentify,
 
         /// <summary>
-        /// 验证成功，灯绿色常亮
+        /// 验证成功，灯绿色间隔2次快闪
+        /// 同时也是等待配网状态
         /// </summary>
         AuthSuccess,
 

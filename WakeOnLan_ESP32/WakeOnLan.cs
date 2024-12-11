@@ -2,7 +2,6 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
-using nanoFramework.Networking;
 
 namespace WakeOnLan_ESP32
 {
@@ -35,20 +34,21 @@ namespace WakeOnLan_ESP32
 
         static byte[] ParseMacAddress(string macAddress)
         {
-            Regex regex = new Regex("^([0-9a-fA-F]{2}[:-]?){5}([0-9a-fA-F]{2})$");
+            if(macAddress.Length == 17)
+            {
+                macAddress = macAddress.Substring(0, 2) + macAddress.Substring(3, 2) + macAddress.Substring(6, 2) + macAddress.Substring(9, 2) + macAddress.Substring(12, 2) + macAddress.Substring(15, 2);
+            }
 
-            if (!regex.IsMatch(macAddress))
+            if (macAddress.Length != 12)
             {
                 throw new ArgumentException("Invalid MAC address.");
             }
-
-            string cleanedMacAddress = new Regex("[:-]").Replace(macAddress, "");
 
             byte[] macBytes = new byte[6];
 
             for (int i = 0; i < 6; i++)
             {
-                macBytes[i] = Convert.ToByte(cleanedMacAddress.Substring(i * 2, 2), 16);
+                macBytes[i] = Convert.ToByte(macAddress.Substring(i * 2, 2), 16);
             }
 
             return macBytes;
@@ -60,6 +60,7 @@ namespace WakeOnLan_ESP32
             udpClient.Connect(IPAddress.Broadcast, 9);
             udpClient.Send(magicPacket);
             udpClient.Close();
+            Console.WriteLine("Magic packet sent.");
         }
 
     }

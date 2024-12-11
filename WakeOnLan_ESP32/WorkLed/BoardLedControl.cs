@@ -7,7 +7,7 @@ namespace WakeOnLan_ESP32.WorkLed
     internal class BoardLedControl
     {
         /// <summary>
-        /// ESP32-S3-Zero 灯珠的引脚
+        /// 灯珠的引脚
         /// </summary>
         static int WS2812_Pin;
 
@@ -15,7 +15,6 @@ namespace WakeOnLan_ESP32.WorkLed
         /// 板载 RGB 灯
         /// </summary>
         static XlWs2812b leddev;
-        Ws2812c led;
 
         /// <summary>
         /// 灯光图片
@@ -103,7 +102,9 @@ namespace WakeOnLan_ESP32.WorkLed
                     LedBlink(Color.Blue, 200);
                     break;
                 case RunStatus.AuthSuccess:
-                    LedSet(Color.Green);
+                    LedBlink(Color.Green,200);
+                    LedBlink(Color.Green, 200);
+                    Thread.Sleep(700);
                     break;
                 case RunStatus.Connecting:
                     LedBlink(Color.Orange, 200);
