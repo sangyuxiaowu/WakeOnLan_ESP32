@@ -47,7 +47,8 @@ namespace WakeOnLan_ESP32.WorkLed
             leddev = new XlWs2812b(WS2812_Pin, 1, 1);
             image = leddev.Image;
 
-            statusThread = new Thread(() => {
+            statusThread = new Thread(() =>
+            {
                 while (true)
                 {
                     if (autoUpdate)
@@ -102,7 +103,7 @@ namespace WakeOnLan_ESP32.WorkLed
                     LedBlink(Color.Blue, 200);
                     break;
                 case RunStatus.AuthSuccess:
-                    LedBlink(Color.Green,200);
+                    LedBlink(Color.Green, 200);
                     LedBlink(Color.Green, 200);
                     Thread.Sleep(700);
                     break;
