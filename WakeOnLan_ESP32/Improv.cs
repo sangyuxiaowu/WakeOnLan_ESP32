@@ -1,16 +1,17 @@
 ﻿//
 // Copyright (c) .NET Foundation and Contributors
 // See LICENSE file in the project root for full license information.
+// https://github.com/nanoframework/Samples/blob/main/LICENSE.md
 //
 
-using System;
-using System.Text;
 using nanoFramework.Device.Bluetooth;
-using nanoFramework.Device.Bluetooth.GenericAttributeProfile;
-using System.Net.NetworkInformation;
-using System.Device.Wifi;
-using nanoFramework.Networking;
 using nanoFramework.Device.Bluetooth.Advertisement;
+using nanoFramework.Device.Bluetooth.GenericAttributeProfile;
+using nanoFramework.Networking;
+using System;
+using System.Device.Wifi;
+using System.Net.NetworkInformation;
+using System.Text;
 using System.Threading;
 
 namespace ImprovWifi

@@ -72,9 +72,6 @@
     <Reference Include="System.Net.Sockets.UdpClient">
       <HintPath>..\packages\nanoFramework.System.Net.Sockets.UdpClient.1.1.65\lib\System.Net.Sockets.UdpClient.dll</HintPath>
     </Reference>
-    <Reference Include="System.Text.RegularExpressions">
-      <HintPath>..\packages\nanoFramework.System.Text.RegularExpressions.1.1.80\lib\System.Text.RegularExpressions.dll</HintPath>
-    </Reference>
     <Reference Include="System.Threading">
       <HintPath>..\packages\nanoFramework.System.Threading.1.1.32\lib\System.Threading.dll</HintPath>
     </Reference>

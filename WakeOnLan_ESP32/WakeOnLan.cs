@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Net;
 using System.Net.Sockets;
-using System.Text.RegularExpressions;
 
 namespace WakeOnLan_ESP32
 {
@@ -34,7 +33,7 @@ namespace WakeOnLan_ESP32
 
         static byte[] ParseMacAddress(string macAddress)
         {
-            if(macAddress.Length == 17)
+            if (macAddress.Length == 17)
             {
                 macAddress = macAddress.Substring(0, 2) + macAddress.Substring(3, 2) + macAddress.Substring(6, 2) + macAddress.Substring(9, 2) + macAddress.Substring(12, 2) + macAddress.Substring(15, 2);
             }

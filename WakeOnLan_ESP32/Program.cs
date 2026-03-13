@@ -17,17 +17,17 @@ namespace WakeOnLan_ESP32
     {
         // 硬件配置信息
 
-        # if ESP32_S3_ZERO
+#if ESP32_S3_ZERO
         // 灯珠的GPIO引脚
         static int WS2812_Pin = 21;
         // 用户按键引脚
         static int BOOT_Pin = 0;
-        #else
+#else
         // 灯珠的GPIO引脚
         static int WS2812_Pin = 8;
         // 用户按键引脚
         static int BOOT_Pin = 9;
-        #endif
+#endif
         // 硬件配网名称
         static string _deviceName = "ESP32 桑榆肖物";
 
