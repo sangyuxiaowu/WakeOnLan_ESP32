@@ -198,7 +198,40 @@ namespace WakeOnLan_ESP32
         private static void SetProvisioningURL()
         {
             // All good, wifi connected, set up URL for access
-            _imp.RedirectUrl = "http://" + _imp.GetCurrentIPAddress() + "/start.htm";
+            var ip = WaitForCurrentIPAddress();
+            if (string.IsNullOrEmpty(ip) || ip == "0.0.0.0")
+            {
+                Console.WriteLine("Failed to get a valid IP address for provisioning URL");
+                return;
+            }
+
+            _imp.RedirectUrl = "http://" + ip + "/start.htm";
+        }
+
+        private static string WaitForCurrentIPAddress(int maxRetries = 20, int delayMilliseconds = 500)
+        {
+            string ip = "0.0.0.0";
+
+            for (int i = 0; i < maxRetries; i++)
+            {
+                try
+                {
+                    ip = _imp.GetCurrentIPAddress();
+                }
+                catch
+                {
+                    ip = "0.0.0.0";
+                }
+
+                if (!string.IsNullOrEmpty(ip) && ip != "0.0.0.0")
+                {
+                    return ip;
+                }
+
+                Thread.Sleep(delayMilliseconds);
+            }
+
+            return ip;
         }
 
         private static void AppRun()
